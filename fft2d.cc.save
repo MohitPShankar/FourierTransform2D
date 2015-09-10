@@ -5,13 +5,12 @@
 
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <signal.h>
 #include <math.h>
 #include <mpi.h>
-
+#include <sstream>
 #include "Complex.h"
 #include "InputImage.h"
 
@@ -62,6 +61,8 @@ void Transform2D(const char* inputFN)
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Status status;
     
+    cout << "numtasks: " << nCPU <<"rank: " << rank << endl;
+
     
     int nRowCPU = w/nCPU;
     
@@ -76,7 +77,7 @@ void Transform2D(const char* inputFN)
         Transform1D(imagePixels+Displacement+(ii*w),w,H+Displacement+(ii*w), fwd);
     }
 
-    if(rank == 0)
+    if(0 == rank)
     {
       for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
       {
@@ -89,8 +90,10 @@ void Transform2D(const char* inputFN)
                 &status);
       }
     }
+    cout << "cpu " << rank << ": Received row chunks to cpu 0." << endl;
 
-  if(rank != 0)
+    image.SaveImageData("MyAfter1d.txt", H, w, height);
+  if(0 != rank)
   {
     MPI_Send(H + Displacement,
              nRowCPU * w * sizeof(Complex),
@@ -98,6 +101,7 @@ void Transform2D(const char* inputFN)
              0,
              0,
              MPI_COMM_WORLD);
+    cout << "cpu " << rank << ": Sending 1D DFT row chunks to cpu 0." << endl;
   }
   
   if(rank == 0)
@@ -111,9 +115,17 @@ void Transform2D(const char* inputFN)
     }
   }
 
-    int Displacement_Transpose = nRowCPU*height*rank;
+//
+//
+//
+//
+//
+//
+//
 
-  if(rank!=0)
+  int Displacement_Transpose = nRowCPU * height * rank;
+
+  if(0 != rank)
   {
     MPI_Recv(H_Temp + Displacement_Transpose,
              nRowCPU * height * sizeof(Complex),
@@ -125,7 +137,7 @@ void Transform2D(const char* inputFN)
   }
 
 
-  if(rank == 0)
+  if(0 == rank)
   {
     for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
     {
@@ -135,6 +147,7 @@ void Transform2D(const char* inputFN)
                 cpuIndex,
                 0,
                 MPI_COMM_WORLD);
+      cout << "cpu 0: Sending 1D DFT column chunks to cpu " << rank << "." << endl;
     }
   }
   
@@ -143,7 +156,7 @@ void Transform2D(const char* inputFN)
     {
         Transform1D(H_Temp+Displacement_Transpose+(ll*height),height,H_Temp2+Displacement_Transpose+(ll*height),fwd);
     }
-
+   
   if(rank == 0)
   {
     for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
@@ -167,6 +180,7 @@ void Transform2D(const char* inputFN)
              0,
              0,
              MPI_COMM_WORLD);
+    cout << "cpu " << rank << ": Sending 2D DFT column chunks to cpu 0." << endl;
   }
   if(rank == 0)
   {
@@ -178,234 +192,53 @@ void Transform2D(const char* inputFN)
                   H_Final[jj+w*kk] = H_Temp2[kk+height*jj];
         }
     }
-  }
-    if(rank == 0)
+  }  
+  image.SaveImageData("MyAfter2d.txt", H_Final, w, height);
+
+
+
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+    
+    for(int ii=0;ii<w;ii++)
     {
-        image.SaveImageData("MyAfter2d.txt", H_Final, w, height);
+     	Transform1D(H_Final+(ii*w),w,H_Temp_inv+(ii*w), inv);
     }
 
-
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-
-    
-    
-    
-    nRowCPU = w/nCPU;
-    Displacement = nRowCPU*rank*w;
-    Displacement_Transpose = nRowCPU*height*rank;
-    
-    if(rank!=0)
+    //First Transpose
+    for(int jj=0;jj<w;jj++)
     {
-        MPI_Recv(H_Final + Displacement,
-                 nRowCPU * height * sizeof(Complex),
-                 MPI_CHAR,
-                 0,
-                 0,
-                 MPI_COMM_WORLD,
-                 &status);
-    }
-    
-    
-    if(rank == 0)
-    {
-        for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
+     	for(int kk=0;kk<height;kk++)
         {
-            MPI_Send(H_Final + nRowCPU * cpuIndex * height,
-                     nRowCPU * height * sizeof(Complex),
-                     MPI_CHAR,
-                     cpuIndex,
-                     0,
-                     MPI_COMM_WORLD);
-        }
-    }
-
-
-    for(int ii=0;ii<nRowCPU;ii++)
-    {
-        Transform1D(H_Final+Displacement+(ii*w),w,H_Temp_inv+Displacement+(ii*w), inv);
-    }
-    
-    if(rank == 0)
-    {
-        for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
-        {
-            MPI_Recv(H_Temp_inv + nRowCPU * cpuIndex * w,
-                     nRowCPU * w * sizeof(Complex),
-                     MPI_CHAR,
-                     cpuIndex,
-                     0,
-                     MPI_COMM_WORLD,
-                     &status);
-        }
-    }
-    
-    if(rank != 0)
-    {
-        MPI_Send(H_Temp_inv + Displacement,
-                 nRowCPU * w * sizeof(Complex),
-                 MPI_CHAR,
-                 0,
-                 0,
-                 MPI_COMM_WORLD);
-    }
-        
-    if(rank == 0)
-    {  //Transpose of the matrix
-        for(int jj=0;jj<w;jj++)
-        {
-            for(int kk=0;kk<height;kk++)
-            {
                 H_Temp2_inv[kk+height*jj] = H_Temp_inv[jj+w*kk];
-            }
         }
-    }
-    
-
-        
-    if(rank!=0)
-    {
-        MPI_Recv(H_Temp2_inv + Displacement_Transpose,
-                 nRowCPU * height * sizeof(Complex),
-                 MPI_CHAR,
-                 0,
-                 0,
-                 MPI_COMM_WORLD,
-                 &status);
-    }
-    
-    
-    if(rank == 0)
-    {
-        for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
-        {
-            MPI_Send(H_Temp2_inv + nRowCPU * cpuIndex * height,
-                     nRowCPU * height * sizeof(Complex),
-                     MPI_CHAR,
-                     cpuIndex,
-                     0,
-                     MPI_COMM_WORLD);
-        }
-    }
-    
-    //Transform 1D data
-    for(int ll=0;ll<nRowCPU;ll++)
-    {
-        Transform1D(H_Temp2_inv+Displacement_Transpose+(ll*height),height,H_Temp3_inv+Displacement_Transpose+(ll*height),inv);
-    }
-    
-    if(rank == 0)
-    {
-        for(int cpuIndex = 1; cpuIndex < nCPU; cpuIndex++)
-        {
-            MPI_Recv(H_Temp3_inv + nRowCPU * cpuIndex * height,
-                     nRowCPU * height * sizeof(Complex),
-                     MPI_CHAR,
-                     cpuIndex,
-                     0,
-                     MPI_COMM_WORLD,
-                     &status);
-        }
-        
-    }
-    
-    if(rank != 0)
-    {
-        MPI_Send(H_Temp3_inv + Displacement,
-                 nRowCPU * height * sizeof(Complex),
-                 MPI_CHAR,
-                 0,
-                 0,
-                 MPI_COMM_WORLD);
     }
 
-    
-    if(rank == 0)
+    //Second 1d Inverse DFT
+    for(int ll=0;ll<w;ll++)
     {
-        //Transpose of the matrix
-        for(int jj=0;jj<w;jj++)
+     	Transform1D(H_Temp2_inv+(ll*height),height,H_Temp3_inv+(ll*height),inv);
+    }
+
+    for(int jj=0;jj<w;jj++)
+    {
+        for(int kk=0;kk<height;kk++)
         {
-            for(int kk=0;kk<height;kk++)
-            {
-                H_Final_inv[jj+w*kk] = H_Temp3_inv[kk+height*jj];
-            }
+                  H_Final_inv[jj+w*kk] = H_Temp3_inv[kk+height*jj];
         }
     }
-    if(rank == 0)
-    {
-        image.SaveImageData("MyAfterInverse.txt", H_Final_inv, w, height);
-    }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-//    if(rank ==0)
-//    {
-//    for(int ii=0;ii<w;ii++)
-//    {
-//     	Transform1D(H_Final+(ii*w),w,H_Temp_inv+(ii*w), inv);
-//    }
-//    image.SaveImageData("WithoutMpi_BeforeFirst_Transpose.txt", H_Temp_inv, w, height);
-//
-//    //First Transpose
-//    for(int jj=0;jj<w;jj++)
-//    {
-//     	for(int kk=0;kk<height;kk++)
-//        {
-//                H_Temp2_inv[kk+height*jj] = H_Temp_inv[jj+w*kk];
-//        }
-//    }
-//    image.SaveImageData("WithoutMpi_AfterFirst_Transpose.txt", H_Temp2_inv, height, w);
-//
-//    //Second 1d Inverse DFT
-//    for(int ll=0;ll<w;ll++)
-//    {
-//     	Transform1D(H_Temp2_inv+(ll*height),height,H_Temp3_inv+(ll*height),inv);
-//    }
-//    image.SaveImageData("WithoutMpi_BeforeSecond_Transpose.txt", H_Temp3_inv, height, w);
-//
-//    for(int jj=0;jj<w;jj++)
-//    {
-//        for(int kk=0;kk<height;kk++)
-//        {
-//                  H_Final_inv[jj+w*kk] = H_Temp3_inv[kk+height*jj];
-//        }
-//    }
-//
-//    image.SaveImageData("MyAfter2d_INV.txt", H_Final_inv, w, height);
-//    }
-//
+
+    image.SaveImageData("MyAfter2d_INV.txt", H_Final_inv, w, height);
+    		
 }
 
 void Transform1D(Complex* h, int w, Complex* H, int bin)
